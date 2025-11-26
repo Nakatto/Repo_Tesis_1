@@ -8,7 +8,7 @@
         {
             "name": "PlatformIO",
             "includePath": [
-                "D:/Programacion/VSCode/ESP32/1. AZDelivery/esp32-hello-world/src",
+                "D:/Programacion/tesis/pre_tesis/firmware/esp32/luxometro_TSL2561/src",
                 "C:/Users/jaime/.platformio/packages/framework-arduinoespressif32/libraries/Wire/src",
                 "C:/Users/jaime/.platformio/packages/framework-arduinoespressif32/libraries/HTTPClient/src",
                 "C:/Users/jaime/.platformio/packages/framework-arduinoespressif32/libraries/WiFiClientSecure/src",
@@ -243,7 +243,7 @@
             "browse": {
                 "limitSymbolsToIncludedHeaders": true,
                 "path": [
-                    "D:/Programacion/VSCode/ESP32/1. AZDelivery/esp32-hello-world/src",
+                    "D:/Programacion/tesis/pre_tesis/firmware/esp32/luxometro_TSL2561/src",
                     "C:/Users/jaime/.platformio/packages/framework-arduinoespressif32/libraries/Wire/src",
                     "C:/Users/jaime/.platformio/packages/framework-arduinoespressif32/libraries/HTTPClient/src",
                     "C:/Users/jaime/.platformio/packages/framework-arduinoespressif32/libraries/WiFiClientSecure/src",
