@@ -4,3 +4,5 @@
 .vscode/launch.json
 .vscode/ipch
 *.code-workspace
+firmware/esp32/pruebas_python/test_1/.venv/
+firmware/esp32/luxometro_TSL2561/back_old/

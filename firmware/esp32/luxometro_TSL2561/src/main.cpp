@@ -1,122 +1,109 @@
 #include <Arduino.h>
 #include <WiFi.h>
-#include <Wire.h> // nueva inclusión para I2C
-#include <HTTPClient.h> // nueva inclusión para HTTP
-#include <WiFiClient.h> // para cliente TCP
+#include <Wire.h>
+#include <HTTPClient.h>
+#include <WiFiClient.h>
+#include "tsl.h"
 
-// Configuración de la red Wi-Fi
-const char* ssid = "Stark-C6";       // Reemplaza con el nombre de tu red Wi-Fi
-const char* password = "WinterIsComing-C6"; // Reemplaza con la contraseña de tu red Wi-Fi
+// ----------------- WiFi -----------------
+const char* ssid     = "Stark-C6";
+const char* password = "WinterIsComing-C6";
 
-// Añadir configuración del TSL2561
-#define TSL_ADDR 0x39 // dirección por defecto (0x29, 0x39 o 0x49 según wiring)
+// ----------------- TSL2561 -----------------
 
-// URL de la Raspberry (ajusta a tu IP/puerto/ruta) -> usar el endpoint que funciona con curl
-const char* serverUrl = "http://192.168.1.129:5000/api/lux"; // <-- actualizado
 
-void tslWrite8(uint8_t reg, uint8_t value) {
-    Wire.beginTransmission(TSL_ADDR);
-    Wire.write(0x80 | reg); // bit comando
-    Wire.write(value);
-    Wire.endTransmission();
+
+float computeLux(uint16_t ch0, uint16_t ch1) {
+    if (ch0 == 0) return 0.0f;
+
+    float ratio = (float)ch1 / (float)ch0;
+
+    float lux = 0.0f;
+
+    if (ratio <= 0.50f) {
+        lux = 0.0304f * ch0 - 0.062f * ch0 * powf(ratio, 1.4f);
+    } else if (ratio <= 0.61f) {
+        lux = 0.0224f * ch0 - 0.031f * ch1;
+    } else if (ratio <= 0.80f) {
+        lux = 0.0128f * ch0 - 0.0153f * ch1;
+    } else if (ratio <= 1.30f) {
+        lux = 0.00146f * ch0 - 0.00112f * ch1;
+    } else {
+        lux = 0.0f;
+    }
+
+    if (lux < 0.0f) lux = 0.0f;
+    return lux;
 }
 
-uint8_t tslRead8(uint8_t reg) {
-    Wire.beginTransmission(TSL_ADDR);
-    Wire.write(0x80 | reg);
-    Wire.endTransmission();
-    Wire.requestFrom(TSL_ADDR, (uint8_t)1);
-    if (Wire.available()) return Wire.read();
-    return 0;
-}
 
-// Nueva: leer canal 1 (raw, 16 bits)
-uint16_t readChannel1Raw() {
-    uint16_t low = (uint16_t)tslRead8(0x0E);
-    uint16_t high = (uint16_t)tslRead8(0x0F);
-    return (high << 8) | low;
-}
 
-// Nueva: enviar JSON {"lux":<valor>} a la Raspberry con HTTP POST (mejorado)
-void postLux(float lux) {
+// ----------------- InfluxDB -----------------
+// Usa la MISMA BD que el PC (metrics)
+const char* influxUrl = "http://192.168.1.139:8086/write?db=metrics";
+
+void postInflux(uint16_t ch0, uint16_t ch1, float lux) {
     if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("WiFi no conectado, no se envía");
+        Serial.println("WiFi no conectado, no se envía a InfluxDB");
         return;
     }
 
     WiFiClient client;
     HTTPClient http;
-    Serial.print("POST a: ");
-    Serial.println(serverUrl);
-    Serial.print("JSON: ");
-    String json = String("{\"lux\":") + String(lux, 2) + String("}");
-    Serial.println(json);
 
-    // Usar overload con WiFiClient y aumentar timeout
-    http.begin(client, serverUrl);
-    http.setTimeout(10000); // 10s
+    Serial.print("POST InfluxDB a: ");
+    Serial.println(influxUrl);
 
-    http.addHeader("Content-Type", "application/json");
-    int httpCode = http.POST(json);
+    // measurement: lux
+    // tags: host=esp32
+    // fields: lux (calculado), ch0, ch1
+    String line = "lux,host=esp32 "
+                  "lux=" + String(lux, 2) +
+                  ",ch0=" + String(ch0) +
+                  ",ch1=" + String(ch1);
+
+    Serial.print("Line protocol: ");
+    Serial.println(line);
+
+    http.begin(client, influxUrl);
+    http.setTimeout(10000);
+    http.addHeader("Content-Type", "text/plain; charset=utf-8");
+
+    int httpCode = http.POST(line);
 
     if (httpCode > 0) {
-        Serial.printf("POST -> code: %d\n", httpCode);
-        String resp = http.getString();
-        Serial.println(resp);
-    } else {
-        // httpCode <= 0 -> error de conexión/tiempo de espera
-        Serial.printf("POST falló, httpCode: %d\n", httpCode);
-        // información adicional útil para depurar
-        if (!client.connected()) {
-            Serial.println("Cliente TCP no conectado al servidor (posible IP/puerto incorrecto o servidor no escuchando).");
-        } else {
-            Serial.println("Cliente TCP aparentemente conectado; revisar servidor.");
+        Serial.printf("InfluxDB -> HTTP code: %d\n", httpCode);
+        if (httpCode < 200 || httpCode >= 300) {
+            String resp = http.getString();
+            Serial.print("Respuesta de Influx: ");
+            Serial.println(resp);
         }
+    } else {
+        Serial.printf("POST InfluxDB falló, httpCode: %d\n", httpCode);
     }
+
     http.end();
 }
 
-bool tslInit() {
-    Wire.begin();
-    // Leer ID solo como información (no obligatorio)
-    uint8_t id = tslRead8(0x0A);
-    // Encender sensor
-    tslWrite8(0x00, 0x03); // CONTROL: power ON
-    // Configurar timing: 402ms y gain x16 (0x02 + 0x10 = 0x12) -> alta sensibilidad
-    tslWrite8(0x01, 0x12); // TIMING
-    delay(500);
-    Serial.print("TSL2561 ID: 0x");
-    Serial.println(id, HEX);
-    return true;
-}
-
-void printLuxRaw() {
-    uint16_t ch0 = (uint16_t)tslRead8(0x0C) | ((uint16_t)tslRead8(0x0D) << 8);
-    uint16_t ch1 = (uint16_t)tslRead8(0x0E) | ((uint16_t)tslRead8(0x0F) << 8);
-    Serial.print("TSL2561 ch0: ");
-    Serial.print(ch0);
-    Serial.print("  ch1: ");
-    Serial.println(ch1);
-}
 
 void setup() {
     Serial.begin(115200);
+    delay(1000);
+
+    Serial.println();
     Serial.println("Conectando a Wi-Fi...");
 
-    // Conexión a la red Wi-Fi
     WiFi.begin(ssid, password);
 
-    // Esperar hasta que se conecte
     while (WiFi.status() != WL_CONNECTED) {
         delay(1000);
         Serial.println("Intentando conectar...");
     }
 
     Serial.println("Conectado a Wi-Fi");
-    Serial.print("Dirección IP: ");
+    Serial.print("Dirección IP ESP32: ");
     Serial.println(WiFi.localIP());
 
-    // Después de conectar Wi‑Fi:
     if (tslInit()) {
         Serial.println("TSL2561 inicializado.");
     } else {
@@ -124,18 +111,23 @@ void setup() {
     }
 }
 
-void loop() {
-    // Aquí puedes añadir tu lógica principal
-    delay(1000);
-    Serial.println("El dispositivo está funcionando correctamente.");
 
-    // Leer canal 1 y enviar como "lux"
-    uint16_t ch1 = readChannel1Raw();
-    float lux = (float)ch1; // aquí tomamos el valor bruto del canal 1 como 'lux'
-    Serial.print("Canal 1 (raw) -> lux: ");
+
+void loop() {
+    delay(1000);
+
+    uint16_t ch0, ch1;
+    readChannels(ch0, ch1);
+    float lux = computeLux(ch0, ch1);
+
+    Serial.print("ch0: ");
+    Serial.print(ch0);
+    Serial.print("  ch1: ");
+    Serial.print(ch1);
+    Serial.print("  lux: ");
     Serial.println(lux, 2);
 
-    postLux(lux);
+    postInflux(ch0, ch1, lux);
 
     delay(2000);
 }
