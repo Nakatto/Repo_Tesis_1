@@ -1,9 +1,17 @@
 #include <Arduino.h>
-#include <Wire.h>
-#include "Adafruit_VEML7700.h"
+#include "lux_VML7700.h"
+#include "wifi_manager.h"
+#include "mqtt_manager.h"
 
-// Crear instancia del sensor VEML7700
-Adafruit_VEML7700 veml = Adafruit_VEML7700();
+// Credenciales WiFi
+#define WIFI_SSID "Stark-C6"
+#define WIFI_PASSWORD "WinterIsComing-C6"
+
+// Credenciales MQTT
+const char* MQTT_HOST = "test.mosquitto.org";
+const uint16_t MQTT_PORT = 1883;
+const char* MQTT_CLIENT_ID = "esp32_01_lux";      // Que sea único
+const char* MQTT_TOPIC     = "lab/lux/esp32_01";  // Topic de publicación
 
 // Pines I2C (puedes ajustar según tu configuración)
 #define SDA_PIN 21
@@ -15,11 +23,22 @@ void setup() {
   delay(1000);
   Serial.println("\n=== Luxómetro VEML7700 ===");
 
-  // Inicializar I2C
-  Wire.begin(SDA_PIN, SCL_PIN);
-  
+  // Conectar a WiFi
+  if (!wifiInit(WIFI_SSID, WIFI_PASSWORD)) {
+    Serial.println("Advertencia: No se pudo conectar a WiFi");
+    Serial.println("Continuando sin conexión WiFi...\n");
+  }
+  Serial.println();
+
+  // Conectar a MQTT
+  if (!mqttInit(MQTT_HOST, MQTT_PORT, MQTT_CLIENT_ID)) {
+    Serial.println("Advertencia: No se pudo conectar a MQTT");
+    Serial.println("Se publicarán datos por serial...\n");
+  }
+  Serial.println();
+
   // Inicializar sensor VEML7700
-  if (!veml.begin()) {
+  if (!luxInit(SDA_PIN, SCL_PIN)) {
     Serial.println("Error: No se pudo encontrar el sensor VEML7700");
     Serial.println("Verifica las conexiones I2C (SDA, SCL)");
     while (1) {
@@ -29,50 +48,22 @@ void setup() {
   
   Serial.println("Sensor VEML7700 inicializado correctamente");
   
-  // Configurar ganancia y tiempo de integración
-  // VEML7700_GAIN_1    = 1x (para alta luminosidad)
-  // VEML7700_GAIN_2    = 2x
-  // VEML7700_GAIN_1_8  = 1/8 (para muy alta luminosidad)
-  // VEML7700_GAIN_1_4  = 1/4
-  veml.setGain(VEML7700_GAIN_1);
-  
-  // VEML7700_IT_100MS = 100ms
-  // VEML7700_IT_200MS = 200ms
-  // VEML7700_IT_400MS = 400ms
-  // VEML7700_IT_800MS = 800ms
-  veml.setIntegrationTime(VEML7700_IT_100MS);
-  
-  Serial.println("Configuración:");
-  Serial.print("  Ganancia: ");
-  switch(veml.getGain()) {
-    case VEML7700_GAIN_1: Serial.println("1x"); break;
-    case VEML7700_GAIN_2: Serial.println("2x"); break;
-    case VEML7700_GAIN_1_8: Serial.println("1/8"); break;
-    case VEML7700_GAIN_1_4: Serial.println("1/4"); break;
-  }
-  
-  Serial.print("  Tiempo integración: ");
-  switch(veml.getIntegrationTime()) {
-    case VEML7700_IT_100MS: Serial.println("100ms"); break;
-    case VEML7700_IT_200MS: Serial.println("200ms"); break;
-    case VEML7700_IT_400MS: Serial.println("400ms"); break;
-    case VEML7700_IT_800MS: Serial.println("800ms"); break;
-  }
+  // Mostrar configuración
+  luxPrintConfig();
   
   Serial.println("\nIniciando mediciones...\n");
 }
 
 void loop() {
-  // Leer lux (iluminancia en lux)
-  float lux = veml.readLux();
-  
-  // Leer luz blanca (opcional)
-  float white = veml.readWhite();
-  
-  // Leer ALS (Ambient Light Sensor - valor raw)
-  uint16_t als = veml.readALS();
-  
-  // Mostrar resultados
+  // Mantener viva la conexión MQTT
+  mqttKeepAlive();
+
+  // Leer mediciones del sensor
+  float lux = luxRead();
+  float white = luxReadWhite();
+  uint16_t als = luxReadALS();
+
+  // Imprimir por serial
   Serial.println("=================================");
   Serial.print("Iluminancia: ");
   Serial.print(lux);
@@ -84,25 +75,29 @@ void loop() {
   Serial.print("ALS (raw): ");
   Serial.println(als);
   
-  // Clasificación de nivel de iluminación
   Serial.print("Nivel: ");
-  if (lux < 1) {
-    Serial.println("Oscuridad");
-  } else if (lux < 50) {
-    Serial.println("Muy bajo (ej: noche con luna)");
-  } else if (lux < 200) {
-    Serial.println("Bajo (ej: luz de vela, atardecer)");
-  } else if (lux < 400) {
-    Serial.println("Medio (ej: oficina con luz artificial)");
-  } else if (lux < 1000) {
-    Serial.println("Buena iluminación interior");
-  } else if (lux < 10000) {
-    Serial.println("Muy brillante (ej: día nublado)");
-  } else {
-    Serial.println("Luz solar directa");
-  }
-  
+  Serial.println(luxGetLevel(lux));
   Serial.println("=================================\n");
+
+  // Publicar en MQTT si está conectado
+  if (mqttIsConnected()) {
+    // Publicar lux
+    char topicLux[64];
+    snprintf(topicLux, sizeof(topicLux), "%s/lux", MQTT_TOPIC);
+    mqttPublishFloat(topicLux, lux, 2, false);
+
+    // Publicar luz blanca
+    char topicWhite[64];
+    snprintf(topicWhite, sizeof(topicWhite), "%s/white", MQTT_TOPIC);
+    mqttPublishFloat(topicWhite, white, 2, false);
+
+    // Publicar ALS raw
+    char topicALS[64];
+    snprintf(topicALS, sizeof(topicALS), "%s/als", MQTT_TOPIC);
+    mqttPublishInt(topicALS, als, false);
+
+    Serial.println("Datos publicados en MQTT");
+  }
   
   // Esperar 2 segundos antes de la siguiente lectura
   delay(2000);
