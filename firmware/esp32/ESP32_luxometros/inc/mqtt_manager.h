@@ -52,6 +52,15 @@ bool mqttPublishFloat(const char* topic, float value, uint8_t decimals = 2, bool
 bool mqttPublishInt(const char* topic, int value, bool retain = false);
 
 /**
+ * @brief Publica un string en un topic MQTT
+ * @param topic Topic donde publicar
+ * @param payload String a publicar
+ * @param retain Si se quiere retener el mensaje en el broker
+ * @return true si se publicó exitosamente, false en caso contrario
+ */
+bool mqttPublishString(const char* topic, const char* payload, bool retain = false);
+
+/**
  * @brief Desconecta de MQTT
  */
 void mqttDisconnect();
