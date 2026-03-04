@@ -34,7 +34,6 @@ void readChannels(uint16_t &ch0, uint16_t &ch1) {
 }
 
 bool tslInit() {
-    Wire.begin();           // en ESP32: SDA=21, SCL=22 por defecto
     uint8_t id = tslRead8(0x0A);
 
     // Encender sensor

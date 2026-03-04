@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <Wire.h>
 #include "lux_VML7700.h"
 #include "tsl2561.h"
 #include "wifi_manager.h"
@@ -17,12 +18,51 @@ const char* MQTT_TOPIC     = "lab/lux/esp32_01";  // Topic de publicación
 // Pines I2C (puedes ajustar según tu configuración)
 #define SDA_PIN 21
 #define SCL_PIN 22
+#define VEML7700_ADDR 0x10
+
+void scanI2C(int sdaPin, int sclPin) {
+  Wire.begin(sdaPin, sclPin);
+  Serial.println("\nI2C scan...");
+
+  int found = 0;
+  bool foundVeml7700 = false;
+  bool foundTsl2561 = false;
+  for (uint8_t addr = 1; addr < 127; addr++) {
+    Wire.beginTransmission(addr);
+    uint8_t err = Wire.endTransmission();
+    if (err == 0) {
+      const char* label = "";
+      if (addr == VEML7700_ADDR) {
+        label = " (VEML7700)";
+        foundVeml7700 = true;
+      } else if (addr == TSL_ADDR) {
+        label = " (TSL2561)";
+        foundTsl2561 = true;
+      }
+
+      Serial.printf("Found: 0x%02X%s\n", addr, label);
+      found++;
+    }
+  }
+
+  Serial.printf("Done. Devices: %d\n\n", found);
+  if (!foundVeml7700) {
+    Serial.printf("Aviso: no se detectó VEML7700 en 0x%02X\n", VEML7700_ADDR);
+  }
+  if (!foundTsl2561) {
+    Serial.printf("Aviso: no se detectó TSL2561 en 0x%02X\n", TSL_ADDR);
+  }
+  Serial.println();
+}
 
 void setup() {
   // Inicializar comunicación serial
   Serial.begin(115200);
   delay(1000);
   Serial.println("\n=== Luxómetro VEML7700 ===");
+
+  // Escanear dispositivos I2C al arranque
+  scanI2C(SDA_PIN, SCL_PIN);
 
   // Conectar a WiFi
   if (!wifiInit(WIFI_SSID, WIFI_PASSWORD)) {
