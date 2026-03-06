@@ -9,6 +9,8 @@ PubSubClient client(espClient);
 // Variables de estado
 static bool mqtt_connected = false;
 static char mqtt_client_id[64] = {0};  // Guardar clientId para reconexiones
+static unsigned long last_reconnect_attempt_ms = 0;
+static const unsigned long RECONNECT_INTERVAL_MS = 5000;
 
 // Función de callback para mensajes recibidos
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
@@ -41,6 +43,7 @@ bool mqttInit(const char* host, uint16_t port, const char* clientId) {
   // Intentar conectar
   if (client.connect(clientId)) {
     mqtt_connected = true;
+    last_reconnect_attempt_ms = 0;
     Serial.println("¡Conectado a MQTT exitosamente!");
     mqttPrintInfo();
     return true;
@@ -57,11 +60,19 @@ bool mqttIsConnected() {
 }
 
 void mqttKeepAlive() {
-  // Si no está conectado pero debería, intentar reconectar
-  if (!client.connected() && mqtt_connected) {
-    Serial.println("Reconectando a MQTT...");
-    if (client.connect(mqtt_client_id)) {
-      Serial.println("Reconectado a MQTT");
+  // Reintentar conexión periódicamente cuando está desconectado.
+  if (!client.connected()) {
+    unsigned long now = millis();
+    if (last_reconnect_attempt_ms == 0 || (now - last_reconnect_attempt_ms) >= RECONNECT_INTERVAL_MS) {
+      last_reconnect_attempt_ms = now;
+      Serial.println("Reconectando a MQTT...");
+      if (client.connect(mqtt_client_id)) {
+        mqtt_connected = true;
+        Serial.println("Reconectado a MQTT");
+      } else {
+        Serial.print("Reintento MQTT fallido. Código: ");
+        Serial.println(client.state());
+      }
     }
   }
   

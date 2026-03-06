@@ -10,10 +10,11 @@
 #define WIFI_PASSWORD "WinterIsComing-C6"
 
 // Credenciales MQTT
-const char* MQTT_HOST = "test.mosquitto.org";
+//const char* MQTT_HOST = "test.mosquitto.org";
+const char* MQTT_HOST = "192.168.1.168";
 const uint16_t MQTT_PORT = 1883;
 const char* MQTT_CLIENT_ID = "esp32_01_lux";      // Que sea único
-const char* MQTT_TOPIC     = "lab/lux/esp32_01";  // Topic de publicación
+const char* MQTT_TOPIC_BASE = "lab/lux/esp32_01"; // Base de topics para Influx/Telegraf
 
 // Pines I2C (puedes ajustar según tu configuración)
 #define SDA_PIN 21
@@ -163,27 +164,39 @@ void loop() {
   // }
 
   if (mqttIsConnected()) {
-    // Publicar datos VEML7700
-    char payload1[160];
-    snprintf(payload1, sizeof(payload1),
-             "{\"sensor\":\"VEML7700\",\"id\":0,\"lux\":%.2f,\"white\":%.2f,\"als\":%u}",
-             lux, white, als);
+    // Publicar VEML7700 en topics separados
+    char topic[96];
 
-    mqttPublishString(MQTT_TOPIC, payload1, false);
+    snprintf(topic, sizeof(topic), "%s/veml7700/lux", MQTT_TOPIC_BASE);
+    if (mqttPublishFloat(topic, lux, 2, false)) {
+      Serial.printf("MQTT -> %s = %.2f\n", topic, lux);
+    }
 
-    Serial.print("MQTT -> ");
-    Serial.println(payload1);
-    
-    // Publicar datos TSL2561
-    char payload2[160];
-    snprintf(payload2, sizeof(payload2),
-             "{\"sensor\":\"TSL2561\",\"id\":1,\"lux\":%.2f,\"ch0\":%u,\"ch1\":%u}",
-             tsl_lux, tsl_ch0, tsl_ch1);
+    snprintf(topic, sizeof(topic), "%s/veml7700/white", MQTT_TOPIC_BASE);
+    if (mqttPublishFloat(topic, white, 2, false)) {
+      Serial.printf("MQTT -> %s = %.2f\n", topic, white);
+    }
 
-    mqttPublishString(MQTT_TOPIC, payload2, false);
+    snprintf(topic, sizeof(topic), "%s/veml7700/als", MQTT_TOPIC_BASE);
+    if (mqttPublishInt(topic, als, false)) {
+      Serial.printf("MQTT -> %s = %u\n", topic, als);
+    }
 
-    Serial.print("MQTT -> ");
-    Serial.println(payload2);
+    // Publicar TSL2561 en topics separados
+    snprintf(topic, sizeof(topic), "%s/tsl2561/lux", MQTT_TOPIC_BASE);
+    if (mqttPublishFloat(topic, tsl_lux, 2, false)) {
+      Serial.printf("MQTT -> %s = %.2f\n", topic, tsl_lux);
+    }
+
+    snprintf(topic, sizeof(topic), "%s/tsl2561/ch0", MQTT_TOPIC_BASE);
+    if (mqttPublishInt(topic, tsl_ch0, false)) {
+      Serial.printf("MQTT -> %s = %u\n", topic, tsl_ch0);
+    }
+
+    snprintf(topic, sizeof(topic), "%s/tsl2561/ch1", MQTT_TOPIC_BASE);
+    if (mqttPublishInt(topic, tsl_ch1, false)) {
+      Serial.printf("MQTT -> %s = %u\n", topic, tsl_ch1);
+    }
   }
   
   // Esperar 2 segundos antes de la siguiente lectura
