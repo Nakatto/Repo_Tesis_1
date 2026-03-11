@@ -47,4 +47,32 @@ void luxPrintMeasurements();
  */
 void luxPrintConfig();
 
+/**
+ * @brief Lee todos los valores del sensor VEML7700 y los almacena internamente
+ */
+void lee_VEML7700();
+
+/**
+ * @brief Obtiene el último valor de lux leído
+ * @return Último valor de iluminancia en lux
+ */
+float get_ultimo_lux();
+
+/**
+ * @brief Obtiene el último valor de white leído
+ * @return Último valor de luz blanca
+ */
+float get_ultimo_white();
+
+/**
+ * @brief Obtiene el último valor de ALS leído
+ * @return Último valor raw del ALS
+ */
+uint16_t get_ultimo_als();
+
+/**
+ * @brief Imprime por serial los últimos valores leídos del VEML7700
+ */
+void logs_valores_VML7700();
+
 #endif // LUX_VML7700_H

@@ -4,6 +4,11 @@
 // Instancia estática del sensor
 static Adafruit_VEML7700 veml = Adafruit_VEML7700();
 
+// Variables internas para almacenar lecturas
+static float ultimo_lux = 0.0f;
+static float ultimo_white = 0.0f;
+static uint16_t ultimo_als = 0;
+
 bool luxInit(int sdaPin, int sclPin) {
   // Inicializar I2C
   Wire.begin(sdaPin, sclPin);
@@ -100,4 +105,38 @@ void luxPrintConfig() {
     case VEML7700_IT_400MS: Serial.println("400ms"); break;
     case VEML7700_IT_800MS: Serial.println("800ms"); break;
   }
+}
+
+void lee_VEML7700() {
+  ultimo_lux = veml.readLux();
+  ultimo_white = veml.readWhite();
+  ultimo_als = veml.readALS();
+}
+
+float get_ultimo_lux() {
+  return ultimo_lux;
+}
+
+float get_ultimo_white() {
+  return ultimo_white;
+}
+
+uint16_t get_ultimo_als() {
+  return ultimo_als;
+}
+
+void logs_valores_VML7700() {
+  Serial.println("VEML7700:");
+  Serial.print("Iluminancia: ");
+  Serial.print(ultimo_lux);
+  Serial.println(" lux");
+  
+  Serial.print("Luz blanca: ");
+  Serial.println(ultimo_white);
+  
+  Serial.print("ALS (raw): ");
+  Serial.println(ultimo_als);
+  
+  Serial.print("Nivel: ");
+  Serial.println(luxGetLevel(ultimo_lux));
 }

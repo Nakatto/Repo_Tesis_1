@@ -1,6 +1,11 @@
 #include <Wire.h>
 #include "tsl2561.h"
 
+// Variables internas para almacenar lecturas
+static uint16_t ultimo_ch0 = 0;
+static uint16_t ultimo_ch1 = 0;
+static float ultimo_tsl_lux = 0.0f;
+
 void tslWrite8(uint8_t reg, uint8_t value) {
     Wire.beginTransmission(TSL_ADDR);
     Wire.write(0x80 | reg); // bit comando
@@ -68,4 +73,32 @@ float tsl_computeLux(uint16_t ch0, uint16_t ch1) {
 
     if (lux < 0.0f) lux = 0.0f;
     return lux;
+}
+
+void lee_TSL2561() {
+    readChannels(ultimo_ch0, ultimo_ch1);
+    ultimo_tsl_lux = tsl_computeLux(ultimo_ch0, ultimo_ch1);
+}
+
+uint16_t get_ultimo_ch0() {
+    return ultimo_ch0;
+}
+
+uint16_t get_ultimo_ch1() {
+    return ultimo_ch1;
+}
+
+float get_ultimo_tsl_lux() {
+    return ultimo_tsl_lux;
+}
+
+void logs_valores_TSL2561() {
+    Serial.println("\nTSL2561:");
+    Serial.print("Iluminancia: ");
+    Serial.print(ultimo_tsl_lux);
+    Serial.println(" lux");
+    Serial.print("CH0 (Broadband): ");
+    Serial.println(ultimo_ch0);
+    Serial.print("CH1 (IR): ");
+    Serial.println(ultimo_ch1);
 }
