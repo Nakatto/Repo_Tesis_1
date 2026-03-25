@@ -6,3 +6,6 @@
 *.code-workspace
 firmware/esp32/pruebas_python/test_1/.venv/
 firmware/esp32/luxometro_TSL2561/back_old/
+firmware/esp32/luxometro_TSL2591/back_old/back.old
+firmware/esp32/ESP32_OPT300x
+firmware/esp32/ESP32_OPT300x_IDF

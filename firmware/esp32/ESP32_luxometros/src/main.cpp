@@ -2,6 +2,7 @@
 #include <Wire.h>
 #include "lux_VML7700.h"
 #include "tsl2561.h"
+#include "tsl2591.h"
 #include "wifi_manager.h"
 #include "mqtt_manager.h"
 
@@ -21,6 +22,11 @@ const char* MQTT_TOPIC_BASE = "lab/lux/esp32_01"; // Base de topics para Influx/
 #define SCL_PIN 22
 #define VEML7700_ADDR 0x10
 
+// Variables globales para rastrear sensores disponibles
+bool veml7700_available = false;
+bool tsl2561_available = false;
+bool tsl2591_available = false;
+
 void scanI2C(int sdaPin, int sclPin) {
   Wire.begin(sdaPin, sclPin);
   Serial.println("\nI2C scan...");
@@ -28,6 +34,7 @@ void scanI2C(int sdaPin, int sclPin) {
   int found = 0;
   bool foundVeml7700 = false;
   bool foundTsl2561 = false;
+  bool foundTsl2591 = false;
   for (uint8_t addr = 1; addr < 127; addr++) {
     Wire.beginTransmission(addr);
     uint8_t err = Wire.endTransmission();
@@ -39,6 +46,9 @@ void scanI2C(int sdaPin, int sclPin) {
       } else if (addr == TSL_ADDR) {
         label = " (TSL2561)";
         foundTsl2561 = true;
+      } else if (addr == TSL2591_ADDR) {
+        label = " (TSL2591)";
+        foundTsl2591 = true;
       }
 
       Serial.printf("Found: 0x%02X%s\n", addr, label);
@@ -52,6 +62,9 @@ void scanI2C(int sdaPin, int sclPin) {
   }
   if (!foundTsl2561) {
     Serial.printf("Aviso: no se detectó TSL2561 en 0x%02X\n", TSL_ADDR);
+  }
+  if (!foundTsl2591) {
+    Serial.printf("Aviso: no se detectó TSL2591 en 0x%02X\n", TSL2591_ADDR);
   }
   Serial.println();
 }
@@ -79,68 +92,125 @@ void setup() {
   }
   Serial.println();
 
-  // Inicializar sensor VEML7700
-  if (!luxInit(SDA_PIN, SCL_PIN)) {
-    Serial.println("Error: No se pudo encontrar el sensor VEML7700");
-    Serial.println("Verifica las conexiones I2C (SDA, SCL)");
+  // Intentar inicializar sensor VEML7700
+  if (luxInit(SDA_PIN, SCL_PIN)) {
+    veml7700_available = true;
+    Serial.println("Sensor VEML7700 inicializado correctamente");
+    luxPrintConfig();
+  } else {
+    Serial.println("Aviso: No se pudo inicializar el sensor VEML7700");
+  }
+  
+  Serial.println();
+  
+  // Intentar inicializar sensor TSL2561
+  if (tslInit()) {
+    tsl2561_available = true;
+    Serial.println("Sensor TSL2561 inicializado correctamente");
+  } else {
+    Serial.println("Aviso: No se pudo inicializar el sensor TSL2561");
+  }
+  
+  Serial.println();
+  
+  // Intentar inicializar sensor TSL2591
+  if (tsl2591Init()) {
+    tsl2591_available = true;
+    Serial.println("Sensor TSL2591 inicializado correctamente");
+  } else {
+    Serial.println("Aviso: No se pudo inicializar el sensor TSL2591");
+  }
+  
+  Serial.println();
+  
+  // Verificar que al menos un sensor esté disponible
+  if (!veml7700_available && !tsl2561_available && !tsl2591_available) {
+    Serial.println("ERROR CRITICO: No hay sensores de luz disponibles");
+    Serial.println("Verifica las conexiones I2C (SDA, SCL) y direcciones de los dispositivos");
     while (1) {
       delay(1000);
     }
   }
   
-  Serial.println("Sensor VEML7700 inicializado correctamente");
-  
-  // Mostrar configuración
-  luxPrintConfig();
-  
-  // Inicializar sensor TSL2561
-  if (!tslInit()) {
-    Serial.println("Advertencia: No se pudo inicializar el sensor TSL2561");
-    Serial.println("Continuando solo con VEML7700...");
-  }
-  
-  Serial.println("\nIniciando mediciones...\n");
+  Serial.println("Iniciando mediciones...\n");
 }
 
 void loop() {
   // Mantener viva la conexión MQTT
   mqttKeepAlive();
 
-  // Leer mediciones del sensor VEML7700
-  float lux = luxRead();
-  float white = luxReadWhite();
-  uint16_t als = luxReadALS();
-
-  // Leer mediciones del sensor TSL2561
-  uint16_t tsl_ch0, tsl_ch1;
-  readChannels(tsl_ch0, tsl_ch1);
-  float tsl_lux = tsl_computeLux(tsl_ch0, tsl_ch1);
-
-  // Imprimir por serial - VEML7700
   Serial.println("=================================");
-  Serial.println("VEML7700:");
-  Serial.print("Iluminancia: ");
-  Serial.print(lux);
-  Serial.println(" lux");
-  
-  Serial.print("Luz blanca: ");
-  Serial.println(white);
-  
-  Serial.print("ALS (raw): ");
-  Serial.println(als);
-  
-  Serial.print("Nivel: ");
-  Serial.println(luxGetLevel(lux));
-  
-  // Imprimir por serial - TSL2561
-  Serial.println("\nTSL2561:");
-  Serial.print("Iluminancia: ");
-  Serial.print(tsl_lux);
-  Serial.println(" lux");
-  Serial.print("CH0 (Broadband): ");
-  Serial.println(tsl_ch0);
-  Serial.print("CH1 (IR): ");
-  Serial.println(tsl_ch1);
+
+  // Variables para VEML7700
+  float lux = 0;
+  float white = 0;
+  uint16_t als = 0;
+
+  // Leer mediciones del sensor VEML7700 si está disponible
+  if (veml7700_available) {
+    lux = luxRead();
+    white = luxReadWhite();
+    als = luxReadALS();
+
+    Serial.println("VEML7700:");
+    Serial.print("Iluminancia: ");
+    Serial.print(lux);
+    Serial.println(" lux");
+    
+    Serial.print("Luz blanca: ");
+    Serial.println(white);
+    
+    Serial.print("ALS (raw): ");
+    Serial.println(als);
+    
+    Serial.print("Nivel: ");
+    Serial.println(luxGetLevel(lux));
+  }
+
+  // Variables para TSL2561
+  uint16_t tsl_ch0 = 0, tsl_ch1 = 0;
+  float tsl_lux = 0;
+
+  // Leer mediciones del sensor TSL2561 si está disponible
+  if (tsl2561_available) {
+    if (veml7700_available) {
+      Serial.println();
+    }
+    readChannels(tsl_ch0, tsl_ch1);
+    tsl_lux = tsl_computeLux(tsl_ch0, tsl_ch1);
+
+    Serial.println("TSL2561:");
+    Serial.print("Iluminancia: ");
+    Serial.print(tsl_lux);
+    Serial.println(" lux");
+    Serial.print("CH0 (Broadband): ");
+    Serial.println(tsl_ch0);
+    Serial.print("CH1 (IR): ");
+    Serial.println(tsl_ch1);
+  }
+
+  // Variables para TSL2591
+  uint16_t tsl2591_full = 0, tsl2591_ir = 0;
+  float tsl2591_lux = 0;
+
+  // Leer mediciones del sensor TSL2591 si está disponible
+  if (tsl2591_available) {
+    if (veml7700_available || tsl2561_available) {
+      Serial.println();
+    }
+    tsl2591ReadChannels(tsl2591_full, tsl2591_ir);
+    tsl2591_lux = tsl2591ComputeLux(tsl2591_full, tsl2591_ir);
+
+    Serial.println("TSL2591:");
+    Serial.print("Iluminancia: ");
+    Serial.print(tsl2591_lux);
+    Serial.println(" lux");
+    Serial.print("CH0 (Full spectrum): ");
+    Serial.println(tsl2591_full);
+    Serial.print("CH1 (IR): ");
+    Serial.println(tsl2591_ir);
+  }
+
   Serial.println("=================================\n");
 
   // Publicar en MQTT si está conectado
@@ -164,38 +234,60 @@ void loop() {
   // }
 
   if (mqttIsConnected()) {
-    // Publicar VEML7700 en topics separados
     char topic[96];
 
-    snprintf(topic, sizeof(topic), "%s/veml7700/lux", MQTT_TOPIC_BASE);
-    if (mqttPublishFloat(topic, lux, 2, false)) {
-      Serial.printf("MQTT -> %s = %.2f\n", topic, lux);
+    // Publicar VEML7700 en topics separados si está disponible
+    if (veml7700_available) {
+      snprintf(topic, sizeof(topic), "%s/veml7700/lux", MQTT_TOPIC_BASE);
+      if (mqttPublishFloat(topic, lux, 2, false)) {
+        Serial.printf("MQTT -> %s = %.2f\n", topic, lux);
+      }
+
+      snprintf(topic, sizeof(topic), "%s/veml7700/white", MQTT_TOPIC_BASE);
+      if (mqttPublishFloat(topic, white, 2, false)) {
+        Serial.printf("MQTT -> %s = %.2f\n", topic, white);
+      }
+
+      snprintf(topic, sizeof(topic), "%s/veml7700/als", MQTT_TOPIC_BASE);
+      if (mqttPublishInt(topic, als, false)) {
+        Serial.printf("MQTT -> %s = %u\n", topic, als);
+      }
     }
 
-    snprintf(topic, sizeof(topic), "%s/veml7700/white", MQTT_TOPIC_BASE);
-    if (mqttPublishFloat(topic, white, 2, false)) {
-      Serial.printf("MQTT -> %s = %.2f\n", topic, white);
+    // Publicar TSL2561 en topics separados si está disponible
+    if (tsl2561_available) {
+      snprintf(topic, sizeof(topic), "%s/tsl2561/lux", MQTT_TOPIC_BASE);
+      if (mqttPublishFloat(topic, tsl_lux, 2, false)) {
+        Serial.printf("MQTT -> %s = %.2f\n", topic, tsl_lux);
+      }
+
+      snprintf(topic, sizeof(topic), "%s/tsl2561/ch0", MQTT_TOPIC_BASE);
+      if (mqttPublishInt(topic, tsl_ch0, false)) {
+        Serial.printf("MQTT -> %s = %u\n", topic, tsl_ch0);
+      }
+
+      snprintf(topic, sizeof(topic), "%s/tsl2561/ch1", MQTT_TOPIC_BASE);
+      if (mqttPublishInt(topic, tsl_ch1, false)) {
+        Serial.printf("MQTT -> %s = %u\n", topic, tsl_ch1);
+      }
     }
 
-    snprintf(topic, sizeof(topic), "%s/veml7700/als", MQTT_TOPIC_BASE);
-    if (mqttPublishInt(topic, als, false)) {
-      Serial.printf("MQTT -> %s = %u\n", topic, als);
-    }
+    // Publicar TSL2591 en topics separados si está disponible
+    if (tsl2591_available) {
+      snprintf(topic, sizeof(topic), "%s/tsl2591/lux", MQTT_TOPIC_BASE);
+      if (mqttPublishFloat(topic, tsl2591_lux, 2, false)) {
+        Serial.printf("MQTT -> %s = %.2f\n", topic, tsl2591_lux);
+      }
 
-    // Publicar TSL2561 en topics separados
-    snprintf(topic, sizeof(topic), "%s/tsl2561/lux", MQTT_TOPIC_BASE);
-    if (mqttPublishFloat(topic, tsl_lux, 2, false)) {
-      Serial.printf("MQTT -> %s = %.2f\n", topic, tsl_lux);
-    }
+      snprintf(topic, sizeof(topic), "%s/tsl2591/full", MQTT_TOPIC_BASE);
+      if (mqttPublishInt(topic, tsl2591_full, false)) {
+        Serial.printf("MQTT -> %s = %u\n", topic, tsl2591_full);
+      }
 
-    snprintf(topic, sizeof(topic), "%s/tsl2561/ch0", MQTT_TOPIC_BASE);
-    if (mqttPublishInt(topic, tsl_ch0, false)) {
-      Serial.printf("MQTT -> %s = %u\n", topic, tsl_ch0);
-    }
-
-    snprintf(topic, sizeof(topic), "%s/tsl2561/ch1", MQTT_TOPIC_BASE);
-    if (mqttPublishInt(topic, tsl_ch1, false)) {
-      Serial.printf("MQTT -> %s = %u\n", topic, tsl_ch1);
+      snprintf(topic, sizeof(topic), "%s/tsl2591/ir", MQTT_TOPIC_BASE);
+      if (mqttPublishInt(topic, tsl2591_ir, false)) {
+        Serial.printf("MQTT -> %s = %u\n", topic, tsl2591_ir);
+      }
     }
   }
   

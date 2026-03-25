@@ -25,6 +25,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 }
 
 bool mqttInit(const char* host, uint16_t port, const char* clientId) {
+#ifdef ENABLE_MQTT
   Serial.println("\n=== Iniciando conexión MQTT ===");
   Serial.print("Broker: ");
   Serial.print(host);
@@ -53,6 +54,10 @@ bool mqttInit(const char* host, uint16_t port, const char* clientId) {
     Serial.println(client.state());
     return false;
   }
+#else
+  Serial.println("MQTT deshabilitado (define ENABLE_MQTT no activo)");
+  return false;
+#endif
 }
 
 bool mqttIsConnected() {
@@ -60,6 +65,7 @@ bool mqttIsConnected() {
 }
 
 void mqttKeepAlive() {
+#ifdef ENABLE_MQTT
   // Reintentar conexión periódicamente cuando está desconectado.
   if (!client.connected()) {
     unsigned long now = millis();
@@ -80,14 +86,20 @@ void mqttKeepAlive() {
   if (client.connected()) {
     client.loop();
   }
+#endif
 }
 
 bool mqttPublish(const char* topic, const char* payload, bool retain) {
+#ifdef ENABLE_MQTT
   if (!client.connected()) {
     return false;
   }
   
   return client.publish(topic, payload, retain);
+#else
+  // MQTT está deshabilitado
+  return false;
+#endif
 }
 
 bool mqttPublishFloat(const char* topic, float value, uint8_t decimals, bool retain) {

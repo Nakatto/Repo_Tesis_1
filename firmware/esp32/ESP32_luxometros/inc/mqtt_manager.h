@@ -3,6 +3,10 @@
 
 #include <Arduino.h>
 
+// Define para habilitar/deshabilitar MQTT completamente
+// Descomenta esta línea para habilitar conexión y publicación en MQTT
+// #define ENABLE_MQTT
+
 /**
  * @brief Inicializa la conexión MQTT
  * @param host Dirección del broker MQTT
