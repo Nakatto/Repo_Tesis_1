@@ -1,6 +1,7 @@
 #include "mqtt_manager.h"
 #include <PubSubClient.h>
 #include <WiFi.h>
+#include <string.h>
 
 // Cliente WiFi y MQTT
 WiFiClient espClient;
@@ -9,8 +10,27 @@ PubSubClient client(espClient);
 // Variables de estado
 static bool mqtt_connected = false;
 static char mqtt_client_id[64] = {0};  // Guardar clientId para reconexiones
+static char mqtt_status_topic[96] = {0};
 static unsigned long last_reconnect_attempt_ms = 0;
 static const unsigned long RECONNECT_INTERVAL_MS = 5000;
+
+static bool mqttConnectClient() {
+  if (WiFi.status() != WL_CONNECTED) {
+    return false;
+  }
+
+  bool connected = false;
+  if (mqtt_status_topic[0] != '\0') {
+    connected = client.connect(mqtt_client_id, mqtt_status_topic, 0, true, "0");
+    if (connected) {
+      client.publish(mqtt_status_topic, "1", true);
+    }
+  } else {
+    connected = client.connect(mqtt_client_id);
+  }
+
+  return connected;
+}
 
 // Función de callback para mensajes recibidos
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
@@ -22,6 +42,16 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     Serial.print((char)payload[i]);
   }
   Serial.println();
+}
+
+void mqttSetStatusTopic(const char* topic) {
+  if (topic == nullptr) {
+    mqtt_status_topic[0] = '\0';
+    return;
+  }
+
+  strncpy(mqtt_status_topic, topic, sizeof(mqtt_status_topic) - 1);
+  mqtt_status_topic[sizeof(mqtt_status_topic) - 1] = '\0';
 }
 
 bool mqttInit(const char* host, uint16_t port, const char* clientId) {
@@ -42,7 +72,7 @@ bool mqttInit(const char* host, uint16_t port, const char* clientId) {
   client.setCallback(mqttCallback);
   
   // Intentar conectar
-  if (client.connect(clientId)) {
+  if (mqttConnectClient()) {
     mqtt_connected = true;
     last_reconnect_attempt_ms = 0;
     Serial.println("¡Conectado a MQTT exitosamente!");
@@ -72,7 +102,7 @@ void mqttKeepAlive() {
     if (last_reconnect_attempt_ms == 0 || (now - last_reconnect_attempt_ms) >= RECONNECT_INTERVAL_MS) {
       last_reconnect_attempt_ms = now;
       Serial.println("Reconectando a MQTT...");
-      if (client.connect(mqtt_client_id)) {
+      if (mqttConnectClient()) {
         mqtt_connected = true;
         Serial.println("Reconectado a MQTT");
       } else {

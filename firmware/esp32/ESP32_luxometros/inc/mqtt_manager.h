@@ -17,6 +17,12 @@
 bool mqttInit(const char* host, uint16_t port, const char* clientId);
 
 /**
+ * @brief Define topic de estado (online/offline) para el dispositivo
+ * @param topic Topic a usar para estado, por ejemplo: lab/lux/esp32_01/status
+ */
+void mqttSetStatusTopic(const char* topic);
+
+/**
  * @brief Verifica si está conectado a MQTT
  * @return true si está conectado, false en caso contrario
  */

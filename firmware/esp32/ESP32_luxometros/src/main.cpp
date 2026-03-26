@@ -16,6 +16,7 @@ const char* MQTT_HOST = "192.168.1.168";
 const uint16_t MQTT_PORT = 1883;
 const char* MQTT_CLIENT_ID = "esp32_01_lux";      // Que sea único
 const char* MQTT_TOPIC_BASE = "lab/lux/esp32_01"; // Base de topics para Influx/Telegraf
+const char* MQTT_STATUS_TOPIC = "lab/lux/esp32_01/system/status";
 
 // Pines I2C (puedes ajustar según tu configuración)
 #define SDA_PIN 21
@@ -86,6 +87,7 @@ void setup() {
   Serial.println();
 
   // Conectar a MQTT
+  mqttSetStatusTopic(MQTT_STATUS_TOPIC);
   if (!mqttInit(MQTT_HOST, MQTT_PORT, MQTT_CLIENT_ID)) {
     Serial.println("Advertencia: No se pudo conectar a MQTT");
     Serial.println("Se publicarán datos por serial...\n");
@@ -235,6 +237,11 @@ void loop() {
 
   if (mqttIsConnected()) {
     char topic[96];
+
+    snprintf(topic, sizeof(topic), "%s/wifi/rssi", MQTT_TOPIC_BASE);
+    if (mqttPublishInt(topic, wifiGetRSSI(), false)) {
+      Serial.printf("MQTT -> %s = %d\n", topic, wifiGetRSSI());
+    }
 
     // Publicar VEML7700 en topics separados si está disponible
     if (veml7700_available) {

@@ -51,6 +51,69 @@ Proyecto de firmware para ESP32 que mide la iluminancia (lux) usando el sensor V
 3. Selecciona tu placa ESP32
 4. Compila y sube
 
+## Pipeline MQTT -> Telegraf -> InfluxDB -> Grafana
+
+El firmware publica métricas numéricas en topics con este formato:
+
+```
+lab/lux/<device>/<sensor>/<metric>
+```
+
+Ejemplos:
+
+```
+lab/lux/esp32_01/veml7700/lux
+lab/lux/esp32_01/tsl2561/ch0
+lab/lux/esp32_01/tsl2591/ir
+lab/lux/esp32_01/wifi/rssi
+lab/lux/esp32_01/system/status
+```
+
+Notas:
+
+- `system/status`: `1` cuando el dispositivo está conectado y `0` por Last Will si se desconecta inesperadamente.
+- `wifi/rssi`: intensidad de señal WiFi en dBm.
+
+### Telegraf
+
+Usa `telegraf.mqtt.conf` para consumir `lab/lux/esp32_01/#`.
+El bloque `processors.regex` crea las tags:
+
+- `device`
+- `sensor`
+- `metric`
+
+Con esto, en Influx tendrás la medición `luxometro` con el campo `value` y tags que Grafana puede filtrar fácilmente.
+
+### Consultas Flux para Grafana (InfluxDB 2.x)
+
+Serie de lux del VEML7700:
+
+```flux
+from(bucket: "TU_BUCKET")
+   |> range(start: v.timeRangeStart, stop: v.timeRangeStop)
+   |> filter(fn: (r) => r._measurement == "luxometro")
+   |> filter(fn: (r) => r._field == "value")
+   |> filter(fn: (r) => r.device == "esp32_01")
+   |> filter(fn: (r) => r.sensor == "veml7700")
+   |> filter(fn: (r) => r.metric == "lux")
+   |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)
+   |> yield(name: "mean")
+```
+
+Estado del dispositivo (`1` online, `0` offline):
+
+```flux
+from(bucket: "TU_BUCKET")
+   |> range(start: v.timeRangeStart, stop: v.timeRangeStop)
+   |> filter(fn: (r) => r._measurement == "luxometro")
+   |> filter(fn: (r) => r._field == "value")
+   |> filter(fn: (r) => r.device == "esp32_01")
+   |> filter(fn: (r) => r.sensor == "system")
+   |> filter(fn: (r) => r.metric == "status")
+   |> last()
+```
+
 ## Monitor Serial
 
 El proyecto muestra las lecturas cada 2 segundos en el monitor serial (115200 baudios):
